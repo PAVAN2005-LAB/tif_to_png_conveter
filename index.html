@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TIFF to PNG / JPEG Converter</title>
+
+<!-- Google Font -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+
+<style>
+  body {
+    margin: 0;
+    font-family: 'Poppins', sans-serif;
+    background: linear-gradient(135deg, #0f172a, #1e3a8a);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    color: #fff;
+  }
+
+  .container {
+    width: 480px;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(14px);
+    border-radius: 18px;
+    padding: 35px;
+    box-shadow: 0 12px 45px rgba(0,0,0,0.4);
+    animation: fadeIn 0.6s ease-in-out;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 26px;
+    margin-bottom: 18px;
+    font-weight: 600;
+  }
+
+  .hint {
+    text-align: center;
+    font-size: 13px;
+    opacity: 0.9;
+    margin-bottom: 18px;
+  }
+
+  input, select, button {
+    width: 100%;
+    margin: 12px 0;
+    padding: 14px;
+    border-radius: 10px;
+    border: none;
+    font-size: 16px;
+  }
+
+  input, select {
+    background: rgba(255, 255, 255, 0.25);
+    color: white;
+  }
+
+  input::file-selector-button {
+    background: white;
+    color: #1e3a8a;
+    border-radius: 8px;
+    padding: 10px 16px;
+    cursor: pointer;
+  }
+
+  button {
+    background: #ffd700;
+    color: black;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.25s;
+  }
+
+  button:hover {
+    transform: scale(1.06);
+    background: #ffea00;
+  }
+
+  #clear {
+    background: #e2e8f0;
+    color: #111827;
+  }
+
+  #clear:hover {
+    transform: scale(1.06);
+  }
+
+  .preview {
+    margin-top: 15px;
+  }
+
+  #links a {
+    display: block;
+    margin-top: 10px;
+    text-align: center;
+    color: #fffb;
+    background: rgba(255,255,255,0.2);
+    padding: 10px;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: 0.25s;
+  }
+
+  #links a:hover {
+    background: rgba(255,255,255,0.35);
+    transform: scale(1.05);
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+
+<body>
+<div class="container">
+  <h1>TIFF → PNG / JPEG Converter</h1>
+  <div class="hint">Process happens locally in your browser — no file upload required.</div>
+
+  <input id="file" type="file" accept=".tif,.tiff,image/tiff" />
+
+  <select id="pageSelect"></select>
+  <select id="format">
+    <option value="image/png">PNG</option>
+    <option value="image/jpeg">JPEG</option>
+  </select>
+
+  <input id="quality" type="range" min="0.1" max="1" step="0.05" value="0.9" />
+  <label style="font-size:13px">JPEG Quality</label>
+
+  <button id="convert">Convert</button>
+  <button id="clear">Clear</button>
+
+  <div class="preview">
+    <div id="status" class="hint">No file selected.</div>
+    <canvas id="canvas" style="display:none;"></canvas>
+    <div id="links"></div>
+  </div>
+</div>
+
+<!-- UTIF.js for TIFF decoding -->
+<script src="https://unpkg.com/utif@3.0.0/UTIF.js"></script>
+
+<script>
+  const fileEl = document.getElementById('file');
+  const status = document.getElementById('status');
+  const pageSelect = document.getElementById('pageSelect');
+  const canvas = document.getElementById('canvas');
+  const links = document.getElementById('links');
+  const convertBtn = document.getElementById('convert');
+  const formatEl = document.getElementById('format');
+  const qualityEl = document.getElementById('quality');
+  const clearBtn = document.getElementById('clear');
+
+  let buf = null, tiffPages = null;
+
+  fileEl.addEventListener('change', async () => {
+    resetUI();
+    const file = fileEl.files[0];
+    if (!file) return;
+
+    status.textContent = "Reading TIFF...";
+    buf = await file.arrayBuffer();
+    tiffPages = UTIF.decode(buf);
+
+    if (!tiffPages.length) {
+      status.textContent = "Invalid TIFF file!";
+      return;
+    }
+
+    status.textContent = `Loaded ${tiffPages.length} page(s). Select and convert.`;
+    pageSelect.innerHTML = tiffPages.map((_, i) => `<option value="${i}">Page ${i+1}</option>`).join('');
+  });
+
+  convertBtn.addEventListener('click', () => {
+    if (!buf || !tiffPages) return status.textContent = "Select a file first.";
+
+    const index = +pageSelect.value;
+    const ifd = tiffPages[index];
+
+    status.textContent = "Rendering...";
+
+    UTIF.decodeImage(buf, ifd);
+    const rgba = UTIF.toRGBA8(ifd);
+
+    canvas.width = ifd.width;
+    canvas.height = ifd.height;
+    canvas.style.display = 'block';
+
+    const ctx = canvas.getContext('2d');
+    const imgData = ctx.createImageData(ifd.width, ifd.height);
+    imgData.data.set(rgba);
+    ctx.putImageData(imgData, 0, 0);
+
+    const fmt = formatEl.value;
+    const q = +qualityEl.value;
+    const dataUrl = canvas.toDataURL(fmt, fmt === 'image/jpeg' ? q : undefined);
+
+    links.innerHTML = "";
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = `converted_page_${index+1}.${fmt === 'image/png' ? 'png' : 'jpg'}`;
+    a.textContent = "Download Converted Image";
+    links.appendChild(a);
+
+    status.textContent = "Conversion Complete ✔";
+  });
+
+  clearBtn.onclick = () => {
+    fileEl.value = "";
+    resetUI();
+  };
+
+  function resetUI() {
+    canvas.style.display = "none";
+    links.innerHTML = "";
+    status.textContent = "No file selected.";
+    pageSelect.innerHTML = "";
+    buf = null;
+    tiffPages = null;
+  }
+
+  // drag-and-drop
+  window.addEventListener("dragover", e => e.preventDefault());
+  window.addEventListener("drop", e => {
+    e.preventDefault();
+    if (e.dataTransfer.files.length) {
+      fileEl.files = e.dataTransfer.files;
+      fileEl.dispatchEvent(new Event("change"));
+    }
+  });
+</script>
+</body>
+</html>
